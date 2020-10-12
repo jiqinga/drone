@@ -1,9 +1,66 @@
 kind: pipeline
 name: default
+type: docker
 
 steps:
-- name: test
-  image: alpine
-  commands:
-  - echo hello
-  - echo world
+  - name: notify_start
+    image: lddsb/drone-dingtalk-message
+    settings:
+      token: ***
+      type: markdown
+      tips_title: 触发构建通知
+      tpl: https://renercc.github.io/static/drone/dingtalk-notify-start.tpl
+  - name: gradle_build
+    image: gradle
+    volumes:
+      - name: gradle_home
+        path: /home/gradle/.gradle
+    privileged: true
+    commands:
+      - gradle build
+  - name: docker_build
+    image: plugins/docker
+    settings:
+      registry: registry.cn-shanghai.aliyuncs.com
+      username: ***
+      password: ***
+      repo: registry.cn-shanghai.aliyuncs.com/rener/halo
+      auto_tag: true
+    volumes:
+      - name: docker
+        path: /var/run/docker.sock
+      - name: docker_conf
+        path: /root/.docker
+    privileged: true
+  - name: deploy
+    image: appleboy/drone-ssh
+    settings:
+      host: renqzh.com
+      username: ci
+      password: ***
+      port: 22
+      script:
+        - docker pull registry.cn-shanghai.aliyuncs.com/rener/halo
+        - docker tag registry.cn-shanghai.aliyuncs.com/rener/halo drone/halo:latest
+        - docker run --name halo --privileged -d -p8085:8090 -v /www/halo:/root/halo -v /www/halo-dev:/root/halo-dev drone/halo
+  - name: notify_end
+    image: lddsb/drone-dingtalk-message
+    settings:
+      token: ***
+      type: markdown
+      tips_title: 构建结果通知
+      tpl: https://renercc.github.io/static/drone/dingtalk-notify-end.tpl
+    when:
+      status:
+        - success
+        - failure
+volumes:
+  - name: gradle_home
+    host:
+      path: /root/.gradle
+  - name: docker
+    host:
+      path: /var/run/docker.sock
+  - name: docker_conf
+    host:
+      path: /root/.docker
